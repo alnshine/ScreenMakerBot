@@ -1,67 +1,58 @@
+// Command screenshot is a chromedp example demonstrating how to take a
+// screenshot of a specific element and of the entire browser viewport.
 package main
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"time"
 
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
-	"github.com/gosimple/slug"
 )
 
-type Alphabet struct {
-}
-
 func main() {
-	startTime := time.Now()
-
-	ctx, cancel := chromedp.NewContext(context.Background())
+	// create context
+	ctx, cancel := chromedp.NewContext(
+		context.Background(),
+		// chromedp.WithDebugf(log.Printf),
+	)
 	defer cancel()
-	file, err := os.Open("site.txt")
-	if err != nil {
-		os.Exit(0)
+
+	// capture screenshot of an element
+	var buf []byte
+	if err := chromedp.Run(ctx, elementScreenshot(`https://pkg.go.dev/`, `div.go-Content`, &buf)); err != nil {
+		log.Fatal(err)
 	}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		url := "https://" + scanner.Text() + "/"
-		var filename string
-		if len(os.Args) == 3 {
-			filename = os.Args[2]
-		} else {
-			filename = slug.Make(url) + ".png"
-		}
-
-		var imageBuf []byte
-
-		if err := chromedp.Run(
-			ctx,
-			ScreenshotTasks(url, &imageBuf),
-		); err != nil {
-			log.Fatal(err)
-		}
-
-		if err := ioutil.WriteFile(filename, imageBuf, 0644); err != nil {
-			log.Fatal(err)
-		}
+	if err := os.WriteFile("elementScreenshot.png", buf, 0o644); err != nil {
+		log.Fatal(err)
 	}
-	endTime := time.Now()
 
-	elapsedTime := endTime.Sub(startTime)
+	// capture entire browser viewport, returning png with quality=90
+	if err := chromedp.Run(ctx, fullScreenshot(`https://brank.as/`, 90, &buf)); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile("fullScreenshot.png", buf, 0o644); err != nil {
+		log.Fatal(err)
+	}
 
-	fmt.Printf("Время выполнения: %v\n", elapsedTime)
+	log.Printf("wrote elementScreenshot.png and fullScreenshot.png")
 }
 
-func ScreenshotTasks(url string, imageBuf *[]byte) chromedp.Tasks {
+// elementScreenshot takes a screenshot of a specific element.
+func elementScreenshot(urlstr, sel string, res *[]byte) chromedp.Tasks {
 	return chromedp.Tasks{
-		chromedp.Navigate(url),
-		chromedp.ActionFunc(func(ctx context.Context) (err error) {
-			*imageBuf, err = page.CaptureScreenshot().Do(ctx)
-			return err
-		}),
+		chromedp.Navigate(urlstr),
+		chromedp.Screenshot(sel, res, chromedp.NodeVisible),
+	}
+}
+
+// fullScreenshot takes a screenshot of the entire browser viewport.
+//
+// Note: chromedp.FullScreenshot overrides the device's emulation settings. Use
+// device.Reset to reset the emulation and viewport settings.
+func fullScreenshot(urlstr string, quality int, res *[]byte) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.Navigate(urlstr),
+		chromedp.FullScreenshot(res, quality),
 	}
 }
